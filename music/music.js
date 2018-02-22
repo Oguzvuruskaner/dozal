@@ -45,15 +45,14 @@ class Music
   queueEventHandler(music)
   {
 
-    console.log("Müziğin içinden : " + music.queue);
     const url = music.queue.dequeue();
-    console.log("Müziğin içnden dequeueden sonra : "  + music.queue);
     music.url = url;
     music.getStream(url).then((stream) => {
-      music.dispatcher = music.connection.playStream(stream,{seek : music.seekTime(music.url),volume:1});
+      music.dispatcher = music.connection.playStream(stream,{seek : Music.seekTime(music.url),volume:1});
       music.dispatcher.on('end',() => {
         if(!music.queue.isEmpty())
         {
+          console.log("Girdi.");
           music.eventEmitter.emit('queueEnd',music);
         }
         else {
@@ -110,7 +109,7 @@ class Music
 
 
   */
-  getStream(msg,url)
+  getStream(url)
   {
       return new Promise( (resolve,reject) => {
         try{
@@ -288,21 +287,9 @@ class Music
   }
   res(msg)
   {
-    this.dispatcher.removeAllListeners('end');
+    this.queue.enqueue(this.url);
+    console.log(this.queue.peek());
     this.dispatcher.end();
-
-    this.getStream(msg,this.url).then((stream) => {
-      this.dispatcher = this.connection.playStream(stream,{seek:Music.seekTime(this.url),volume:1});
-      this.dispatcher.on('end',() => {
-        if(!this.queue.isEmpty())
-        {
-          this.eventEmitter.emit('queueEnd',this);
-        }
-        else {
-          this.eventEmitter.emit('end',this);
-        }
-      });
-    }).catch(console.err);
   }
   neverEnd()
   {}
