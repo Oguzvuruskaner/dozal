@@ -17,7 +17,7 @@ class Music
   constructor()
   {
     this.eventEmitter = new events.EventEmitter();
-    this.playing = false; // Belki kullanılacak geçişlerde.
+    this.playing = null; // Belki kullanılacak geçişlerde.
     this.dispatcher = null;
     this.connection = null;
     this.queue = new Queue();
@@ -49,6 +49,7 @@ class Music
     music.url = url;
     music.getStream(url).then((stream) => {
       music.dispatcher = music.connection.playStream(stream,{seek : Music.seekTime(music.url),volume:1});
+      this.playing = stream.
       music.dispatcher.on('end',() => {
         if(!music.queue.isEmpty())
         {
@@ -186,19 +187,20 @@ class Music
 
 
       voiceChannel.join().then(  (connection) => {
-        const stream = youtube(url,{filter:'audioonly',quality:'highestaudio'});
-        this.connection = connection;
-        this.url = url;
-        this.dispatcher = this.connection.playStream(stream,{volume:1,seek:Music.seekTime(url)});
-        this.dispatcher.on('end',() => {
-          if(!this.queue.isEmpty())
-          {
-            this.eventEmitter.emit('queueEnd',this);
-          }
-          else {
-            this.eventEmitter.emit('end',this);
-          }
-        });
+        this.getStream(url).then((stream)=>{
+          this.connection = connection;
+          this.url = url;
+          this.dispatcher = this.connection.playStream(stream,{volume:1,seek:Music.seekTime(url)});
+          this.dispatcher.on('end',() => {
+            if(!this.queue.isEmpty())
+            {
+              this.eventEmitter.emit('queueEnd',this);
+            }
+            else {
+              this.eventEmitter.emit('end',this);
+            }
+          });
+        }).catch(console.error);
       });
     }
   }
@@ -224,6 +226,36 @@ class Music
     {
     this.dispatcher.pause();
     }
+  }
+  /*
+
+
+
+
+  @params{searchString}
+  @returns{list of elements}
+
+
+
+  */
+  findQuery(searchString)
+  {
+    return new Promise((resolve,reject)=>{
+      var c = [];
+      var url = this.Query() + this.searchQuery(searchString);
+      request(url,(err,res,body)=>{
+        var $ = cheerio.load(body);
+        $('yt-uix-sessionlink spf-link').each((index,element)=>{
+          c[index] = {link:'https://www.youtube.com'+element.attribs.href}
+        });
+      });
+      if(c != 0)
+      {
+        resolve(c);
+      }else {
+        reject(c);
+      }
+    });
   }
    getNext(url)
   {
@@ -252,7 +284,8 @@ class Music
     });
   }
 
-
+  playList(url)
+  {}
   exit(bot,msg)
   {
       msg.channel.send('Çıkıyorum agam :tired_face::tired_face::tired_face:');
