@@ -27,53 +27,23 @@ class Music
   }
   endEventHandler(music)
   {
-    music.getNext(music.url).then((chosenOne) =>{
-      const stream = youtube(chosenOne.link,{filter:'audioonly'});
-      music.url = chosenOne.link;
-      music.dispatcher = music.connection.playStream(stream,{seek:Music.seekTime(chosenOne.link),volume:1});
-      music.dispatcher.on('end',() => {
-        if(!music.queue.isEmpty())
-        {
-          music.eventEmitter.emit('queueEnd',music);
-        }
-        else {
-          music.eventEmitter.emit('end',music);
-        }
-      });
-    });
+    Music.playMusic(music,music.url);
   }
   queueEventHandler(music)
   {
-
-    const url = music.queue.dequeue();
-    music.url = url;
-    music.getStream(url).then((stream) => {
-      music.dispatcher = music.connection.playStream(stream,{seek : Music.seekTime(music.url),volume:1});
-      this.playing = stream.
-      music.dispatcher.on('end',() => {
-        if(!music.queue.isEmpty())
-        {
-          console.log("Girdi.");
-          music.eventEmitter.emit('queueEnd',music);
-        }
-        else {
-          music.eventEmitter.emit('end',music);
-        }
-      });
-    });
+    Music.playMusic(music,music.queue.dequeue());
   }
-
-
-
-
-
   /*
 
   @params {string}
   @returns {number}
   */
   static seekTime(url){
-    if(url.includes('t='))
+    if(url == 0 || url == undefined || url == NaN)
+    {
+      return 0;
+    }
+    else if(url.includes('t='))
     {
       var piece  =  url.slice(url.indexOf('t=')+2);
       for(var index = 0 ; index < piece.length ; index++)
@@ -103,6 +73,45 @@ class Music
   }
 
   /*
+    Satır azaltmak için yazılmış bir fonskiyon
+  */
+  static playMusic(music,url)
+  {
+    music.getStream(url).then((stream) => {
+      music.dispatcher = music.connection.playStream(stream,{seek : Music.seekTime(music.url),volume:1});
+      music.playing = stream
+      music.dispatcher.on('end',() => {
+        if(!music.queue.isEmpty())
+        {
+          music.eventEmitter.emit('queueEnd',music);
+        }
+        else {
+          music.eventEmitter.emit('end',music);
+        }
+      });
+    }).catch((searchString) => {
+      music.findQuery(searchString).then((arr) => {
+        var chosenOne = Music.getRandom(arr).link;
+        console.log(chosenOne);
+        music.getStream(chosenOne).then((stream)=>{
+          music.dispatcher = music.connection.playStream(stream,{seek:Music.seekTime(music.url),volume:1});
+          music.playing = stream;
+          music.dispatcher.on('end',() => {
+            if(!music.queue.isEmpty())
+            {
+              music.eventEmitter.emit('queueEnd',music);
+            }
+            else {
+              music.eventEmitter.emit('end',music);
+            }
+          });
+        }).catch(console.err);
+      }).catch(console.err);
+
+    });
+  }
+
+  /*
 
     @params{string}
     @returns{stream}
@@ -119,7 +128,7 @@ class Music
         }
         catch(e)
         {
-          console.error(e);
+          reject(url);
         }
       });
   }
@@ -131,18 +140,19 @@ class Music
   */
   static searchQuery(url)
   {
-    for(index in url)
+    var length = url.length;
+    for(var index = 0;index < length;index++ )
     {
       switch(url[index])
       {
         case(" "):
-          url = url.slice(0,url) + "+" + url.slice(url+1);
+          url = url.slice(0,index) + "+" + url.slice(index+1);
           break;
         case("+"):
-          url = url.slice(0,url) + "%2B" + url.slice(url+1);
+          url = url.slice(0,index) + "%2B" + url.slice(index+1);
           break;
         case("%"):
-          url = url.slice(0,url) + "%25" + url.slice(url+1);
+          url = url.slice(0,index) + "%25" + url.slice(index+1);
           break;
         default:
           continue;
@@ -150,6 +160,15 @@ class Music
       }
     }
     return url;
+  }
+  /*
+
+    Diziden rasgele fonskiyon seçen fonksiyon
+
+  */
+  static getRandom(arr)
+  {
+    return arr[Math.floor(Math.random()*(arr.length))];
   }
   /*
     @params{Discord.Client,string,Message}
@@ -174,8 +193,8 @@ class Music
         //Eğer şarkı devam ediyorsa sıraya ekler.
         this.queue.enqueue(url);
 
-      }).catch((err) => {
-        console.error(err);
+      }).catch((url) => {
+        this.getQuery()
       });
     }else {
       var voiceChannel = msg.member.voiceChannel;
@@ -187,20 +206,8 @@ class Music
 
 
       voiceChannel.join().then(  (connection) => {
-        this.getStream(url).then((stream)=>{
-          this.connection = connection;
-          this.url = url;
-          this.dispatcher = this.connection.playStream(stream,{volume:1,seek:Music.seekTime(url)});
-          this.dispatcher.on('end',() => {
-            if(!this.queue.isEmpty())
-            {
-              this.eventEmitter.emit('queueEnd',this);
-            }
-            else {
-              this.eventEmitter.emit('end',this);
-            }
-          });
-        }).catch(console.error);
+        this.connection = connection;
+        Music.playMusic(this,url);
       });
     }
   }
@@ -242,16 +249,25 @@ class Music
   {
     return new Promise((resolve,reject)=>{
       var c = [];
-      var url = this.Query() + this.searchQuery(searchString);
+      var url = Music.getQuery() + Music.searchQuery(searchString);
       request(url,(err,res,body)=>{
-        var $ = cheerio.load(body);
-        $('yt-uix-sessionlink spf-link').each((index,element)=>{
-          c[index] = {link:'https://www.youtube.com'+element.attribs.href}
-        });
+          var $ = cheerio.load(body);
+          $('.yt-uix-sessionlink.spf-link').each((index,element)=>{
+            let href = element.attribs.href;
+
+            if(href.includes('watch?v='))
+            {
+              c[c.length] = {link:Music.getYoutubeLink()+href};
+
+            }
+          });
       });
+
       if(c != 0)
       {
+        
         resolve(c);
+        console.log(c);
       }else {
         reject(c);
       }
@@ -271,13 +287,12 @@ class Music
         });
         if(c == 0)
         {
-          reject(c);
+          reject(url);
         }
         else
         {
-          let randNumber = (nese) => {return Math.floor(Math.random()*nese)};
-          resolve(c[randNumber(c.length)]);
-          }
+          resolve(c);
+        }
       });
 
 
@@ -288,7 +303,7 @@ class Music
   {}
   exit(bot,msg)
   {
-      msg.channel.send('Çıkıyorum agam :tired_face::tired_face::tired_face:');
+
       this.kill(bot,msg);
 
   }
@@ -300,10 +315,35 @@ class Music
       msg.channel.send("Kanalda mısın da kanaldan çıkmaktan bahsediyorsun @"+msg.author.username);
       return ;
     }
-    this.dispatcher = null;
-    this.connection = null;
-    this.queue = new Queue();
-    this.url = null; //Yeniden başlatılacağı zaman gerekli
+    /*
+
+    Dozal kanalda değil.
+
+
+    */
+    else if(this.connection == null)
+    {
+      msg.channel.send("Kanalda bile değilim aqu @"+msg.author.username);
+
+    }
+    /*
+
+    Dozal bir kanalda ama yazan elemanınn kanalında değil.
+
+
+    */
+    else if (this.connection.channel != voiceChannel) {
+        msg.channel.send("Kanalıma gel öyle söyle.Senin kanalın " + voiceChannel.name + " benimkisi ise " + this.connection.channel.name + " @" + msg.author.username);
+    }
+    else {
+      msg.channel.send('Çıkıyorum agam :tired_face::tired_face::tired_face:');
+      this.playing = null; // Belki kullanılacak geçişlerde.
+      this.dispatcher = null;
+      this.connection = null;
+      this.queue = new Queue();
+      this.url = null; //Yeniden başlatılacağı zaman gerekli
+      this.connection.channel.leave();
+    }
   }
 
 
@@ -314,15 +354,18 @@ class Music
     {
       this.dispatcher.end();
     }
-    else {
-      msg.channel.send('Listede çalınacak şarkı yok @' + msg.author.username);
-    }
   }
   res(msg)
   {
-    this.queue.enqueue(this.url);
-    console.log(this.queue.peek());
-    this.dispatcher.end();
+    if(this.dispatcher)
+    {
+      this.queue.enqueue(this.url);
+      while(!this.queue.peek() != this.url)
+      {
+        this.queue.enqueue(this.queue.dequeue());
+      }
+      this.dispatcher.end();
+    }
   }
   neverEnd()
   {}
