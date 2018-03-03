@@ -156,6 +156,11 @@ class Music
 
   flow(bot,notUrl,msg)
   {
+    if(notUrl == 0)
+    {
+      this.msgChannel.send("Boş link ya da şarkı ismi atma @"+msg.author.username);
+      return;
+    }
     var url = this.concatenate(notUrl);
     this.msgChannel = msg.channel;
     if(!this.connection)
