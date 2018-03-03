@@ -43,13 +43,18 @@ dozal.on('message', msg => {
     // Dota 2 için komutlar
       case('dota'):
 
-
+        break;
 
       case('çal'):
 
-        dozal.music.play(this,splittedContent[1],msg);
+        dozal.music.flow(this,splittedContent.slice(1),msg);
         break;
-
+      case('geç'):
+        dozal.music.next();
+        break;
+      default:
+        channel.send('Böyle bir emir yok.');
+        break;
 
     }
   }

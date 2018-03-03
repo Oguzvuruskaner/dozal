@@ -3,15 +3,15 @@ const cheerio = require('cheerio');
 const request = require('request');
 const events = require('events');
 const fs = require('fs');
-const google = require('../googleapis');
-const googleAuth = require('../google-auth-library');
-class Music
 const Queue = require('queue-fifo');
+class Music
 {
   static getYoutubeLink(){
     return 'https://www.youtube.com';
   }
-
+  static getQuery(){
+    return 'https://www.youtube.com/results?search_query=';
+  }
   constructor()
   {
     this.eventEmitter = new events.EventEmitter();
@@ -68,24 +68,25 @@ const Queue = require('queue-fifo');
   endEventHandler(music)
   {
     setTimeout(() => {
-      track.dispatcher = null;
+      music.dispatcher = null;
     }, 100);
-    if(this.queue.isEmpty())
+    console.log(music.dispatcher);
+    if(music.queue.isEmpty())
     {
-      var chosenOne = Music.getRandom(this.getNext(this.playing)).link;
-      music.play(url);
+      console.log(music.playing);
+      music.getNext(music.playing).then((arr) => {
+        console.log(arr[0].link);
+        music.play(arr[0].link);
+      });
+
     }
     else {
       //Döngü varsa sıradaki bütün şarkılar çalınıp sıranın en arkasına atılacak.
-      if(!loop)
+      var nextUrl = music.queue.dequeue();
+      music.play(nextUrl);
+      if(music.loop)
       {
-        var nextUrl = this.queue.dequeue();
-        this.play(next);
-      }
-      else {
-        var nextUrl = this.queue.dequeue();
-        this.play(nextUrl);
-        this.queue.enqueue(nextUrl);
+        music.queue.enqueue(nextUrl);
       }
     }
   }
@@ -126,6 +127,12 @@ const Queue = require('queue-fifo');
         case("%"):
           url = url.slice(0,index) + "%25" + url.slice(index+1);
           break;
+        case('"'):
+          url = url.slice(0,index) + "\"" + url.slice(index+1);
+          break;
+        case("'"):
+            url = url.slice(0,index) + "'" + url.slice(index+1);
+
         default:
           continue;
       }
@@ -147,8 +154,9 @@ const Queue = require('queue-fifo');
     dozal.çal komutuyla tetiklenir.
   */
 
-  flow(bot,url,msg)
+  flow(bot,notUrl,msg)
   {
+    var url = this.concatenate(notUrl);
     this.msgChannel = msg.channel;
     if(!this.connection)
     {
@@ -158,16 +166,26 @@ const Queue = require('queue-fifo');
         this.msgChannel.send("Kanala gir önce @"+msg.author.username);
         return;
       }
-      voiceChannel.join().then((connection) => {
-        this.connection = connection;
-      });
-      this.play(url);
+
+        voiceChannel.join().then((connection) => {
+          this.connection = connection;
+          this.play(url);
+        });
+
     }
     else {
       this.queue.enqueue(url);
     }
+  }
 
-
+  concatenate(arr)
+  {
+    var retString = ""
+    for(var variable of arr)
+    {
+      retString += variable + " ";
+    }
+    return retString.slice(0,-1);
   }
   /*
 
@@ -189,11 +207,9 @@ const Queue = require('queue-fifo');
       });
     }).catch((searchString) =>{
       this.findQuery(searchString).then((arr)=>{
-
-        var chosenOne = Music.getRandom(arr).link;
-        this.getStream(chosenOne).then((stream)=>{
+        this.playing = arr[0].link  ;
+        this.getStream(arr[0].link).then((stream)=>{
           this.dispatcher = this.connection.playStream(stream,{seek:Music.seekTime(url),volume:1});
-          this.playing = url;
           this.dispatcher.on('end',()=>{
             this.eventEmitter.emit('end',this);
           });
@@ -212,7 +228,28 @@ const Queue = require('queue-fifo');
   @returns{list of elements}
   Youtube aramasından döndürür.
   */
-  
+  findQuery(searchString)
+  {
+    return new Promise((resolve,reject)=>{
+      var c = [];
+      var url = Music.getQuery() + Music.searchQuery(searchString);
+      request(url,(err,res,body)=>{
+        var $ = cheerio.load(body);
+        $('.yt-lockup-content a').each((index,element)=>{
+          let href = element.attribs.href;
+          if(href.includes('watch?v=')){
+            c[c.length] = {link:Music.getYoutubeLink()+href};
+          }
+        });
+        if(c != 0){
+          resolve(c);
+        }else {
+          reject(c);
+        }
+      });
+
+    });
+  }
   /*
 
 
@@ -231,16 +268,20 @@ const Queue = require('queue-fifo');
           $('.content-wrapper a').each(function(index,element){
             c[index] = {link:'https://www.youtube.com'+element.attribs.href,name:element.attribs.title};
           });
-        if(c == 0){
-          reject(url);
-        }else{
-          resolve(c);
-        }
+          console.log(c);
+          if(c == 0){
+            reject(url);
+          }else{
+            resolve(c);
+          }
       });
     });
   }
 
-
+  next()
+  {
+    this.dispatcher.end();
+  }
 
 }
 
