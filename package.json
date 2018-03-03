@@ -23,9 +23,11 @@
   "dependencies": {
     "axios": "^0.17.1",
     "discord.js": "^11.3.0",
+    "googleapis": "^27.0.0",
     "iterate-js": "^1.1.0",
     "mongodb": "^2.2.34",
     "node-opus": "^0.2.7",
+    "npm": "^5.7.1",
     "queue-fifo": "^0.2.4",
     "x-ray": "^2.3.2",
     "ytdl-core": "^0.20.1"

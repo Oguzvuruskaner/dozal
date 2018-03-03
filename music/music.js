@@ -3,17 +3,15 @@ const cheerio = require('cheerio');
 const request = require('request');
 const events = require('events');
 const fs = require('fs');
-const Queue = require('queue-fifo');
+const google = require('../googleapis');
+const googleAuth = require('../google-auth-library');
 class Music
+const Queue = require('queue-fifo');
 {
-  static getYoutubeLink()
-  {
+  static getYoutubeLink(){
     return 'https://www.youtube.com';
   }
-  static getQuery()
-  {
-    return 'https://www.youtube.com/results?search_query=';
-  }
+
   constructor()
   {
     this.eventEmitter = new events.EventEmitter();
@@ -21,18 +19,12 @@ class Music
     this.dispatcher = null;
     this.connection = null;
     this.queue = new Queue();
-    this.url = null; //Yeniden başlatılacağı zaman gerekli
-    this.eventEmitter.on('end',this.endEventHandler);
-    this.eventEmitter.on('queueEnd',this.queueEventHandler);
+    this.eventEmitter.on('end',this.endEventHandler );
+    this.history = null; //Geçmiş özelliği ekleniek.
+    this.msgChannel = null;
+    this.loop = false;
   }
-  endEventHandler(music)
-  {
-    Music.playMusic(music,music.url);
-  }
-  queueEventHandler(music)
-  {
-    Music.playMusic(music,music.queue.dequeue());
-  }
+
   /*
 
   @params {string}
@@ -72,52 +64,34 @@ class Music
     return 0;
   }
 
-  /*
-    Satır azaltmak için yazılmış bir fonskiyon
-  */
-  static playMusic(music,url)
+
+  endEventHandler(music)
   {
-    music.getStream(url).then((stream) => {
-      music.dispatcher = music.connection.playStream(stream,{seek : Music.seekTime(music.url),volume:1});
-      music.playing = stream
-      music.dispatcher.on('end',() => {
-        if(!music.queue.isEmpty())
-        {
-          music.eventEmitter.emit('queueEnd',music);
-        }
-        else {
-          music.eventEmitter.emit('end',music);
-        }
-      });
-    }).catch((searchString) => {
-      music.findQuery(searchString).then((arr) => {
-        var chosenOne = Music.getRandom(arr).link;
-        console.log(chosenOne);
-        music.getStream(chosenOne).then((stream)=>{
-          music.dispatcher = music.connection.playStream(stream,{seek:Music.seekTime(music.url),volume:1});
-          music.playing = stream;
-          music.dispatcher.on('end',() => {
-            if(!music.queue.isEmpty())
-            {
-              music.eventEmitter.emit('queueEnd',music);
-            }
-            else {
-              music.eventEmitter.emit('end',music);
-            }
-          });
-        }).catch(console.err);
-      }).catch(console.err);
-
-    });
+    setTimeout(() => {
+      track.dispatcher = null;
+    }, 100);
+    if(this.queue.isEmpty())
+    {
+      var chosenOne = Music.getRandom(this.getNext(this.playing)).link;
+      music.play(url);
+    }
+    else {
+      //Döngü varsa sıradaki bütün şarkılar çalınıp sıranın en arkasına atılacak.
+      if(!loop)
+      {
+        var nextUrl = this.queue.dequeue();
+        this.play(next);
+      }
+      else {
+        var nextUrl = this.queue.dequeue();
+        this.play(nextUrl);
+        this.queue.enqueue(nextUrl);
+      }
+    }
   }
-
   /*
-
     @params{string}
     @returns{stream}
-
-
-
   */
   getStream(url)
   {
@@ -132,10 +106,8 @@ class Music
         }
       });
   }
-
-  /**
-
-  *@param{string:url}*
+  /*
+  *@param{string:url}
   *@returns{string:youtubesearchQuery}
   */
   static searchQuery(url)
@@ -156,7 +128,6 @@ class Music
           break;
         default:
           continue;
-
       }
     }
     return url;
@@ -178,102 +149,79 @@ class Music
 
   flow(bot,url,msg)
   {
-
-
-    //DOZAL KANALDA
-    if(this.connection && this.dispatcher)
+    this.msgChannel = msg.channel;
+    if(!this.connection)
     {
-      // this.url = url;
-      // this.dispatcher.end('user');
-      // const stream = youtube(url,{filter:'audioonly',quality:'highestaudio'});
-      // this.dispatcher = this.connection.playStream(stream,{volume:1});
-      // this.dispatcher.on('end',() => {
-      // this.eventEmitter.emit('end',this,url);
-      this.getStream(url).then((stream) =>{
-        //Eğer şarkı devam ediyorsa sıraya ekler.
-        this.queue.enqueue(url);
-
-      }).catch((url) => {
-        this.getQuery()
-      });
-    }else {
       var voiceChannel = msg.member.voiceChannel;
       if(!voiceChannel)
       {
-        msg.channel.send("Kanala gir önce  amına koyduğum @"+msg.author.username);
-        return ;
+        this.msgChannel.send("Kanala gir önce @"+msg.author.username);
+        return;
       }
-
-
-      voiceChannel.join().then(  (connection) => {
+      voiceChannel.join().then((connection) => {
         this.connection = connection;
-        Music.playMusic(this,url);
       });
+      this.play(url);
     }
-  }
-
-
-  /*
-  @params {string}
-
-
-  @return {Array{string/url,string/video name}}
-*/
-
-  go()
-  {
-    if(this.dispatcher.paused)
-    {
-    this.dispatcher.resume();
+    else {
+      this.queue.enqueue(url);
     }
-  }
-  stop()
-  {
-    if(!this.dispatcher.paused)
-    {
-    this.dispatcher.pause();
-    }
+
+
   }
   /*
 
 
 
-
-  @params{searchString}
-  @returns{list of elements}
-
+    Çaldıran dispatcherı hazırlayan fonskiyon
 
 
   */
-  findQuery(searchString)
+  play(url)
   {
-    return new Promise((resolve,reject)=>{
-      var c = [];
-      var url = Music.getQuery() + Music.searchQuery(searchString);
-      request(url,(err,res,body)=>{
-          var $ = cheerio.load(body);
-          $('.yt-uix-sessionlink.spf-link').each((index,element)=>{
-            let href = element.attribs.href;
-
-            if(href.includes('watch?v='))
-            {
-              c[c.length] = {link:Music.getYoutubeLink()+href};
-
-            }
-          });
+    //this.msgChannel MESAJ ATILCAK KANALI DÖNDÜRÜYOR.
+    this.getStream(url).then((stream) =>
+    {
+      this.dispatcher = this.connection.playStream(stream,{seek:Music.seekTime(url),volume:1});
+      this.playing = url;
+      this.dispatcher.on('end',()=>{
+        this.eventEmitter.emit('end',this);
       });
+    }).catch((searchString) =>{
+      this.findQuery(searchString).then((arr)=>{
 
-      if(c != 0)
-      {
-        
-        resolve(c);
-        console.log(c);
-      }else {
-        reject(c);
-      }
+        var chosenOne = Music.getRandom(arr).link;
+        this.getStream(chosenOne).then((stream)=>{
+          this.dispatcher = this.connection.playStream(stream,{seek:Music.seekTime(url),volume:1});
+          this.playing = url;
+          this.dispatcher.on('end',()=>{
+            this.eventEmitter.emit('end',this);
+          });
+        });
+      });
     });
   }
-   getNext(url)
+/*
+  @params {string}
+  @return {Array{string/url,string/video name}}
+*/
+
+
+  /*
+  @params{searchString}
+  @returns{list of elements}
+  Youtube aramasından döndürür.
+  */
+  
+  /*
+
+
+
+  Sonraki videoları bulup döndürür.
+
+
+  */
+  getNext(url)
   {
     return new Promise( (resolve,reject) => {
       var c = [];
@@ -281,94 +229,19 @@ class Music
 
           var $ = cheerio.load(body);
           $('.content-wrapper a').each(function(index,element){
-
             c[index] = {link:'https://www.youtube.com'+element.attribs.href,name:element.attribs.title};
-
-        });
-        if(c == 0)
-        {
+          });
+        if(c == 0){
           reject(url);
-        }
-        else
-        {
+        }else{
           resolve(c);
         }
       });
-
-
     });
   }
 
-  playList(url)
-  {}
-  exit(bot,msg)
-  {
-
-      this.kill(bot,msg);
-
-  }
-  kill(bot,msg)
-  {
-    var voiceChannel = msg.member.voiceChannel;
-    if(!voiceChannel)
-    {
-      msg.channel.send("Kanalda mısın da kanaldan çıkmaktan bahsediyorsun @"+msg.author.username);
-      return ;
-    }
-    /*
-
-    Dozal kanalda değil.
 
 
-    */
-    else if(this.connection == null)
-    {
-      msg.channel.send("Kanalda bile değilim aqu @"+msg.author.username);
-
-    }
-    /*
-
-    Dozal bir kanalda ama yazan elemanınn kanalında değil.
-
-
-    */
-    else if (this.connection.channel != voiceChannel) {
-        msg.channel.send("Kanalıma gel öyle söyle.Senin kanalın " + voiceChannel.name + " benimkisi ise " + this.connection.channel.name + " @" + msg.author.username);
-    }
-    else {
-      msg.channel.send('Çıkıyorum agam :tired_face::tired_face::tired_face:');
-      this.playing = null; // Belki kullanılacak geçişlerde.
-      this.dispatcher = null;
-      this.connection = null;
-      this.queue = new Queue();
-      this.url = null; //Yeniden başlatılacağı zaman gerekli
-      this.connection.channel.leave();
-    }
-  }
-
-
-
-  next(msg)
-  {
-    if(this.dispatcher)
-    {
-      this.dispatcher.end();
-    }
-  }
-  res(msg)
-  {
-    if(this.dispatcher)
-    {
-      this.queue.enqueue(this.url);
-      while(!this.queue.peek() != this.url)
-      {
-        this.queue.enqueue(this.queue.dequeue());
-      }
-      this.dispatcher.end();
-    }
-  }
-  neverEnd()
-  {}
 }
 
 

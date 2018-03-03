@@ -47,29 +47,10 @@ dozal.on('message', msg => {
 
       case('çal'):
 
-        dozal.music.flow(this,splittedContent[1],msg);
-        break;
-
-      case('geç'):
-
-        dozal.music.next(msg);
+        dozal.music.play(this,splittedContent[1],msg);
         break;
 
 
-      case('yeniden'):
-        dozal.music.res(msg);
-        break;
-
-      case('dur'):
-        dozal.music.stop(msg);
-        break;
-      case('devam'):
-        dozal.music.go(msg);
-        break;
-
-      case('çık'):
-        dozal.music.exit(this,msg);
-        break;
     }
   }
 
